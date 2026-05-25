@@ -1,11 +1,11 @@
 import os
-from openai import OpenAI
 from dotenv import load_dotenv
+from google import genai
 
 load_dotenv()
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
+client = genai.Client(
+    api_key=os.getenv("GEMINI_API_KEY")
 )
 
 class LLMGenerator:
@@ -25,14 +25,9 @@ class LLMGenerator:
 {question}
 """
 
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
         )
 
-        return response.choices[0].message.content
+        return response.text

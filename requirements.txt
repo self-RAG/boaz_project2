@@ -3,6 +3,7 @@ sentence-transformers==2.2.2
 transformers==4.38.2
 huggingface-hub==0.20.3
 numpy==1.26.4
+google-generativeai
 torch
 neo4j
 openai
