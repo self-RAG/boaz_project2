@@ -4,6 +4,10 @@
 """
 
 import streamlit as st
+import sys
+import os
+sys.path.insert(0, os.path.dirname(__file__))
+from prompts.style_prompt import get_style_prompt, Persona, PERSONA_GUIDES
 
 # ── 페이지 설정 ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -136,6 +140,8 @@ st.markdown("""
 # ── 세션 초기화 ───────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "persona" not in st.session_state:
+    st.session_state.persona = Persona.BEGINNER
 
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
@@ -144,6 +150,31 @@ with st.sidebar:
     st.markdown("**국립중앙박물관** 유물 안내 서비스")
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
 
+    # ── 페르소나 선택 ──────────────────────────────────────────────────────
+    st.markdown("### 👤 관람객 유형")
+    persona_labels = {
+        Persona.CHILD:    "🧒 어린이",
+        Persona.BEGINNER: "🙂 초보",
+        Persona.EXPERT:   "🎓 역사 전문가",
+    }
+    persona_descriptions = {
+        Persona.CHILD:    "쉬운 말로 재미있게!",
+        Persona.BEGINNER: "친절하게 기본 설명",
+        Persona.EXPERT:   "깊이 있는 학술 정보",
+    }
+
+    selected_label = st.radio(
+        label="유형 선택",
+        options=list(persona_labels.values()),
+        index=list(persona_labels.keys()).index(st.session_state.persona),
+        label_visibility="collapsed",
+    )
+    # label → Persona 역변환
+    selected_persona = next(p for p, l in persona_labels.items() if l == selected_label)
+    if selected_persona != st.session_state.persona:
+        st.session_state.persona = selected_persona
+
+    st.caption(persona_descriptions[st.session_state.persona])
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.markdown("### 📊 DB 현황")
     st.markdown("""
@@ -309,29 +340,66 @@ def search_graph(message: str, limit: int = 5) -> list[dict]:
     return results[:limit]
 
 
-def build_answer(message: str, sources: list[dict]) -> str:
-    """검색 결과를 바탕으로 텍스트 응답 생성 (LLM 없는 버전)"""
-    if not sources:
-        return f"**'{message}'** 관련 유물을 찾지 못했어요.\n\n다른 키워드로 검색해보세요. (예: 청자, 조선, 금동, 불상 등)"
+PERSONA_EMOJI = {
+    Persona.CHILD:    "🧒",
+    Persona.BEGINNER: "🙂",
+    Persona.EXPERT:   "🎓",
+}
 
-    lines = [f"**'{message}'** 관련 유물 **{len(sources)}건**을 찾았어요.\n"]
-    for r in sources:
-        g = r["graph"]
-        info_parts = []
-        if g["시대"]:   info_parts.append(f"시대: {', '.join(g['시대'])}")
-        if g["재질"]:   info_parts.append(f"재질: {', '.join(g['재질'][:2])}")
-        if g["전시위치"]: info_parts.append(f"전시: {', '.join(g['전시위치'])}")
-        info_str = " | ".join(info_parts) if info_parts else "정보 없음"
-        lines.append(f"**{r['rank']}. {r['title']}** ({r['소장품번호']})\n   _{info_str}_")
+
+def build_answer(message: str, sources: list[dict], persona: Persona) -> str:
+    """검색 결과를 바탕으로 텍스트 응답 생성 (LLM 없는 버전)"""
+    emoji = PERSONA_EMOJI.get(persona, "🙂")
+
+    if not sources:
+        if persona == Persona.CHILD:
+            return f"앗, **'{message}'** 관련 유물을 못 찾았어요! \n\n다른 말로 다시 물어봐요! (예: 청자, 금동불상, 조선 그림)"
+        elif persona == Persona.EXPERT:
+            return f"**'{message}'** 에 해당하는 유물이 데이터베이스에 존재하지 않습니다.\n\n검색어를 변경하거나 관련 시대·재질명으로 재시도하십시오."
+        else:
+            return f"**'{message}'** 관련 유물을 찾지 못했어요.\n\n다른 키워드로 검색해보세요. (예: 청자, 조선, 금동, 불상 등)"
+
+    if persona == Persona.CHILD:
+        lines = [f"우와! **'{message}'** 랑 관련된 유물을 {len(sources)}개나 찾았어요! {emoji}\n"]
+        for r in sources:
+            g = r["graph"]
+            era  = ', '.join(g['시대']) if g['시대'] else "옛날"
+            mat  = ', '.join(g['재질'][:1]) if g['재질'] else ""
+            loc  = ', '.join(g['전시위치']) if g['전시위치'] else ""
+            lines.append(f"**{r['rank']}. {r['title']}**\n   ➡ {era}에 만들어진 {mat} 유물이에요! {f'({loc}에서 볼 수 있어요)' if loc else ''}")
+
+    elif persona == Persona.EXPERT:
+        lines = [f"**'{message}'** 관련 유물 **{len(sources)}건** 검색 결과입니다. {emoji}\n"]
+        for r in sources:
+            g = r["graph"]
+            parts = []
+            if g['국적']:   parts.append(f"국적: {', '.join(g['국적'])}")
+            if g['시대']:   parts.append(f"시대: {', '.join(g['시대'])}")
+            if g['재질']:   parts.append(f"재질: {', '.join(g['재질'])}")
+            if g['분류']:   parts.append(f"분류: {' > '.join(g['분류'])}")
+            if g['작가']:   parts.append(f"작가: {', '.join(g['작가'])}")
+            if g['전시위치']: parts.append(f"전시위치: {', '.join(g['전시위치'])}")
+            lines.append(f"**{r['rank']}. {r['title']}** `{r['소장품번호']}`\n   " + " | ".join(parts))
+
+    else:  # BEGINNER
+        lines = [f"**'{message}'** 관련 유물 **{len(sources)}건**을 찾았어요. {emoji}\n"]
+        for r in sources:
+            g = r["graph"]
+            info_parts = []
+            if g["시대"]:    info_parts.append(f"시대: {', '.join(g['시대'])}")
+            if g["재질"]:    info_parts.append(f"재질: {', '.join(g['재질'][:2])}")
+            if g["전시위치"]: info_parts.append(f"전시: {', '.join(g['전시위치'])}")
+            info_str = " | ".join(info_parts) if info_parts else "정보 없음"
+            lines.append(f"**{r['rank']}. {r['title']}** ({r['소장품번호']})\n   _{info_str}_")
 
     lines.append("\n> 아래 카드에서 상세 정보를 확인하세요.")
     return "\n\n".join(lines)
 
 
-def get_response(message: str):
+def get_response(message: str, persona: Persona):
     """Neo4j 그래프 검색 → 응답 생성"""
     sources = search_graph(message, limit=5)
-    answer  = build_answer(message, sources)
+    answer  = build_answer(message, sources, persona)
     return answer, sources
 
 
@@ -344,7 +412,7 @@ if user_input:
     # 어시스턴트 응답
     with st.chat_message("assistant", avatar="🏛️"):
         with st.spinner("유물 정보를 검색하는 중..."):
-            answer, sources = get_response(user_input)
+            answer, sources = get_response(user_input, st.session_state.persona)
 
         st.markdown(answer)
         with st.expander(f"📚 참고 유물 {len(sources)}건", expanded=True):
