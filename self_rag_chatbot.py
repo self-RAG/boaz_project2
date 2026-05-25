@@ -32,7 +32,7 @@ from prompts.graph_prompt  import GRAPH_PROMPT
 from prompts.style_prompt  import STYLE_PROMPT
 
 # LLM 초기화
-MODEL_NAME = "gemini-pro"
+MODEL_NAME = "gemini-2.5-flash"
 llm = ChatGoogleGenerativeAI(
     model=MODEL_NAME, 
     temperature=0,
