@@ -1,10 +1,12 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from typing import List
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict, Annotated
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.documents import Document
 from langgraph.graph import StateGraph, END
@@ -30,8 +32,12 @@ from prompts.graph_prompt  import GRAPH_PROMPT
 from prompts.style_prompt  import STYLE_PROMPT
 
 # LLM 초기화
-MODEL_NAME = "gpt-4o-mini"
-llm = ChatOpenAI(model=MODEL_NAME, temperature=0)
+MODEL_NAME = "gemini-pro"
+llm = ChatGoogleGenerativeAI(
+    model=MODEL_NAME, 
+    temperature=0,
+    google_api_key=os.getenv("GEMINI_API_KEY")
+)
 
 # ────────────────────────────────────────────────────────────────────────
 # 2. 데이터 모델 정의 
