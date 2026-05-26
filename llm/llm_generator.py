@@ -1,33 +1,113 @@
 import os
+
 from dotenv import load_dotenv
+from dotenv import find_dotenv
+
 from google import genai
+from google.genai import types
 
-load_dotenv()
+from prompts.system_prompt import SYSTEM_PROMPT
+from prompts.safety_prompt import SAFETY_PROMPT
+from prompts.memory_prompt import MEMORY_PROMPT
+from prompts.graph_prompt import GRAPH_PROMPT
+from prompts.style_prompt import STYLE_PROMPT
 
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
-)
+
+# ==================================================
+# ENV
+# ==================================================
+
+load_dotenv(find_dotenv())
+
+client = genai.Client()
+
+
+# ==================================================
+# LLM
+# ==================================================
 
 class LLMGenerator:
 
-    def generate(self, question, context):
+    def generate(
+        self,
+        question,
+        context,
+        chat_history
+    ):
 
-        prompt = f"""
-당신은 문화유산 전문 도슨트입니다.
+        # ==================================================
+        # 대화 기록 정리
+        # ==================================================
 
-반드시 제공된 정보만 기반으로 답변하세요.
-정보에 없는 내용은 추측하지 마세요.
+        history_text = ""
+
+        for chat in chat_history:
+
+            history_text += (
+                f"{chat['role']}: "
+                f"{chat['content']}\n"
+            )
+
+        # ==================================================
+        # SYSTEM INSTRUCTION
+        # ==================================================
+
+        full_system_instruction = f"""
+{SYSTEM_PROMPT}
+
+{SAFETY_PROMPT}
+
+{MEMORY_PROMPT}
+
+{GRAPH_PROMPT}
+
+{STYLE_PROMPT}
+""".strip()
+
+        # ==================================================
+        # USER CONTENT
+        # ==================================================
+
+        user_content = f"""
+아래 검색 정보를 기반으로만 답변하세요.
+
+[대화 기록]
+{history_text}
 
 [검색 정보]
 {context}
 
-[사용자 질문]
+[현재 질문]
 {question}
-"""
+""".strip()
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        # ==================================================
+        # GEMINI
+        # ==================================================
 
-        return response.text
+        try:
+
+            response = (
+                client.models.generate_content(
+                    model="gemini-2.5-flash",
+
+                    contents=user_content,
+
+                    config=types.GenerateContentConfig(
+                        system_instruction=
+                        full_system_instruction
+                    )
+                )
+            )
+
+            return response.text
+
+        except Exception as e:
+
+            print(
+                f"❌ 에러 발생: {e}"
+            )
+
+            return (
+                "답변 생성 중 오류가 발생했습니다."
+            )
