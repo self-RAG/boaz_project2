@@ -2,10 +2,14 @@ class QueryRouter:
 
     def route(self, query):
 
-        if "알려줘" in query and "시대" in query:
-            return "verification"
+        # 추천형 질문
+        if (
+            "비슷" in query
+            or "다른 유물" in query
+            or "추천" in query
+        ):
 
-        if "다른 유물" in query:
-            return "graph"
+            return "recommendation"
 
-        return "semantic"
+        # 일반 설명형
+        return "description"

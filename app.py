@@ -1,128 +1,163 @@
 from graph.neo4j_client import Neo4jClient
+from graph.graph_retriever import GraphRetriever
+
 from vector_db.vector_retriever import VectorRetriever
+
 from llm.llm_generator import LLMGenerator
 
-class GraphRetriever:
 
-    def __init__(self, neo4j_client):
-        self.neo4j = neo4j_client
-
-    def retrieve_subgraph(self, keyword):
-
-        query = """
-        MATCH (u:유물)-[r]-(n)
-        WHERE u.title CONTAINS $keyword
-           OR u.전시명칭 CONTAINS $keyword
-           OR u.다른명칭 CONTAINS $keyword
-           OR u.소장품번호 CONTAINS $keyword
-
-        RETURN u, r, n
-        LIMIT 20
-        """
-
-        return self.neo4j.run_query(
-            query,
-            {"keyword": keyword}
-        )
-
+# ==================================================
+# 객체 생성
+# ==================================================
 
 neo4j_client = Neo4jClient()
 
-retriever = GraphRetriever(neo4j_client)
+graph_retriever = GraphRetriever(
+    neo4j_client
+)
 
 vector_retriever = VectorRetriever()
 
 llm = LLMGenerator()
 
-
-# 사용자 질문
-query = input("질문: ")
-
-query = query.replace("알려줘", "").strip()
+chat_history = []
 
 
-# ---------------- GRAPH RETRIEVAL ----------------
+# ==================================================
+# 채팅 루프
+# ==================================================
 
-graph_result = retriever.retrieve_subgraph(query)
+while True:
 
-artifact = graph_result[0]["u"]
+    query = input("질문: ")
 
-graph_context = ""
+    if query == "exit":
+        break
 
-graph_context += f"유물명: {artifact['title']}\n"
-graph_context += f"소장품번호: {artifact['소장품번호']}\n"
+    # ==================================================
+    # history 저장
+    # ==================================================
 
-if "전시명칭" in artifact:
-    graph_context += (
-        f"전시명칭: "
-        f"{artifact['전시명칭']}\n"
+    chat_history.append({
+        "role": "user",
+        "content": query
+    })
+
+    # ==================================================
+    # 질문 전처리
+    # ==================================================
+
+    artifact_name = (
+        query
+        .replace("알려줘", "")
+        .replace("설명해줘", "")
+        .strip()
     )
 
-if "다른명칭" in artifact:
-    graph_context += (
-        f"다른명칭: "
-        f"{artifact['다른명칭']}\n"
+    # ==================================================
+    # GRAPH RETRIEVAL
+    # ==================================================
+
+    graph_result = (
+        graph_retriever.retrieve_subgraph(
+            artifact_name
+        )
     )
 
-graph_context += "\n"
+    graph_context = ""
 
-mapping = {
-    "재질로만들어짐": "재질",
-    "분류됨": "분류"
-}
+    if graph_result:
 
-for item in graph_result:
+        artifact = graph_result[0]["u"]
 
-    relation = item["r"][1]
+        graph_context += (
+            f"유물명: "
+            f"{artifact.get('title', '')}\n"
+        )
 
-    if relation in mapping:
-        relation = mapping[relation]
+        graph_context += (
+            f"소장품번호: "
+            f"{artifact.get('소장품번호', '')}\n"
+        )
 
-    node_name = item["n"]["name"]
+        if "전시명칭" in artifact:
 
-    graph_context += (
-        f"{relation}: "
-        f"{node_name}\n"
+            graph_context += (
+                f"전시명칭: "
+                f"{artifact.get('전시명칭', '')}\n"
+            )
+
+        if "다른명칭" in artifact:
+
+            graph_context += (
+                f"다른명칭: "
+                f"{artifact.get('다른명칭', '')}\n"
+            )
+
+        graph_context += "\n"
+
+        for item in graph_result:
+
+            relation = item["r"][1]
+            node_name = item["n"]["name"]
+
+            graph_context += (
+                f"{relation}: "
+                f"{node_name}\n"
+            )
+
+    # ==================================================
+    # VECTOR RETRIEVAL
+    # ==================================================
+
+    vector_result = vector_retriever.search(
+        artifact_name
     )
 
+    vector_context = ""
 
-# ---------------- VECTOR RETRIEVAL ----------------
+    metas = vector_result["metadatas"][0]
 
-vector_result = vector_retriever.search(query)
+    for meta in metas:
 
-vector_context = ""
+        vector_context += (
+            f"설명문: "
+            f"{meta['description']}\n\n"
+        )
 
-metas = vector_result["metadatas"][0]
+    # ==================================================
+    # CONTEXT MERGE
+    # ==================================================
 
-for meta in metas:
+    final_context = f"""
+[Graph 정보]
+{graph_context}
 
-    vector_context += (
-        f"설명문: "
-        f"{meta['description']}\n\n"
+[설명문 정보]
+{vector_context}
+"""
+
+    print(final_context)
+
+    # ==================================================
+    # LLM
+    # ==================================================
+
+    answer = llm.generate(
+        query,
+        final_context,
+        chat_history
     )
 
+    print("\n===== 최종 답변 =====\n")
 
-# ---------------- CONTEXT MERGE ----------------
+    print(answer)
 
-final_context = ""
+    # ==================================================
+    # 답변 저장
+    # ==================================================
 
-final_context += "[Graph 정보]\n"
-final_context += graph_context
-
-final_context += "\n[설명문 정보]\n"
-final_context += vector_context
-
-
-print(final_context)
-
-
-# ---------------- LLM GENERATION ----------------
-
-answer = llm.generate(
-    query,
-    final_context
-)
-
-print("\n===== 최종 답변 =====\n")
-
-print(answer)
+    chat_history.append({
+        "role": "assistant",
+        "content": answer
+    })
