@@ -25,7 +25,7 @@ from prompts.grader_prompts import (
 
 
 grader_client = genai.Client()
-GRADER_MODEL = "gemini-2.0-flash"      
+GRADER_MODEL = "gemini-1.5-flash"      
 llm_generator = LLMGenerator()         
 
 

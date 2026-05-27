@@ -6,8 +6,15 @@
 import streamlit as st
 import sys
 import os
+import requests
 sys.path.insert(0, os.path.dirname(__file__))
 from prompts.style_prompt import get_style_prompt, Persona, PERSONA_GUIDES
+
+# ── API 설정 ──────────────────────────────────────────────────────────────────
+API_URLS = {
+    "Graph RAG":            "http://localhost:8002/chat",
+    "Graph RAG + Self RAG": "http://localhost:8001/chat",
+}
 
 # ── 페이지 설정 ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -142,6 +149,10 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "persona" not in st.session_state:
     st.session_state.persona = Persona.BEGINNER
+if "rag_mode" not in st.session_state:
+    st.session_state.rag_mode = "Graph RAG"
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 
 # ── 사이드바 ──────────────────────────────────────────────────────────────────
@@ -175,6 +186,27 @@ with st.sidebar:
         st.session_state.persona = selected_persona
 
     st.caption(persona_descriptions[st.session_state.persona])
+    st.markdown('<hr class="divider">', unsafe_allow_html=True)
+
+    # ── RAG 모드 선택 ──────────────────────────────────────────────────────
+    st.markdown("### ⚙️ RAG 모드")
+    rag_mode = st.radio(
+        label="모드 선택",
+        options=["Graph RAG", "Graph RAG + Self RAG"],
+        index=["Graph RAG", "Graph RAG + Self RAG"].index(st.session_state.rag_mode),
+        label_visibility="collapsed",
+    )
+    if rag_mode != st.session_state.rag_mode:
+        st.session_state.rag_mode = rag_mode
+        st.session_state.messages = []
+        st.session_state.chat_history = []
+        st.rerun()
+
+    mode_desc = {
+        "Graph RAG":            "그래프 + 벡터 검색 기반 답변",
+        "Graph RAG + Self RAG": "Self-RAG로 환각 검증 포함",
+    }
+    st.caption(mode_desc[st.session_state.rag_mode])
     st.markdown('<hr class="divider">', unsafe_allow_html=True)
     st.markdown("### 📊 DB 현황")
     st.markdown("""
@@ -397,9 +429,29 @@ def build_answer(message: str, sources: list[dict], persona: Persona) -> str:
 
 
 def get_response(message: str, persona: Persona):
-    """Neo4j 그래프 검색 → 응답 생성"""
-    sources = search_graph(message, limit=5)
-    answer  = build_answer(message, sources, persona)
+    """선택된 RAG 모드 API 호출 → 응답 반환"""
+    url = API_URLS[st.session_state.rag_mode]
+    try:
+        resp = requests.post(
+            url,
+            json={
+                "query":        message,
+                "chat_history": st.session_state.chat_history,
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        data    = resp.json()
+        answer  = data.get("answer", "답변을 생성하지 못했습니다.")
+        sources = data.get("sources", [])
+    except requests.exceptions.ConnectionError:
+        mode = st.session_state.rag_mode
+        port = 8000 if mode == "Graph RAG" else 8001
+        answer  = f"⚠️ API 서버에 연결할 수 없습니다.\n\n`python api_graph_rag.py` 또는 `python api_self_rag.py` 를 먼저 실행해주세요. (포트: {port})"
+        sources = []
+    except Exception as e:
+        answer  = f"⚠️ 오류 발생: {e}"
+        sources = []
     return answer, sources
 
 
@@ -425,3 +477,5 @@ if user_input:
         "content": answer,
         "sources": sources,
     })
+    st.session_state.chat_history.append({"role": "user",      "content": user_input})
+    st.session_state.chat_history.append({"role": "assistant", "content": answer})
