@@ -28,7 +28,7 @@ from prompts.grader_prompts import (
 
 # ── 초기화 ────────────────────────────────────────────────────────────────────
 grader_client = genai.Client()
-GRADER_MODEL  = "gemini-1.5-flash"
+GRADER_MODEL  = "gemini-2.5-flash"
 llm_generator = LLMGenerator()
 
 app = FastAPI(title="Graph RAG + Self RAG API")
@@ -105,7 +105,7 @@ def grade_documents(state):
 
 
 def decide_to_generate(state):
-    return "generate" if state["documents"] else "transform_query"
+    return "generate"
 
 
 def transform_query(state):
@@ -164,11 +164,7 @@ def build_rag_graph():
         "generate":        "generate",
     })
     workflow.add_edge("transform_query", "retrieve")
-    workflow.add_conditional_edges("generate", grade_generation, {
-        "hallucination": "generate",
-        "not relevant":  "transform_query",
-        "relevant":      END,
-    })
+    workflow.add_edge("generate", END)
 
     return workflow.compile()
 

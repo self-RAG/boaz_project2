@@ -25,7 +25,7 @@ from prompts.grader_prompts import (
 
 
 grader_client = genai.Client()
-GRADER_MODEL = "gemini-1.5-flash"      
+GRADER_MODEL = "gemini-2.5-flash"      
 llm_generator = LLMGenerator()         
 
 
@@ -99,12 +99,12 @@ def grade_documents(state):
 
 
 def decide_to_generate(state):
-    """관련 문서가 있으면 generate, 없으면 질문 재작성"""
+    """관련 문서가 있으면 generate, 없어도 generate """
     print("==== [3. DECIDE (분기 결정)] ====")
     if not state["documents"]:
-        print("→ 관련 문서 없음 → 질문 재작성")
-        return "transform_query"
-    print(f"→ 관련 문서 {len(state['documents'])}건 → 답변 생성")
+        print("  → 관련 문서 없음 → 그래도 답변 생성")
+    else:
+        print(f"  → 관련 문서 {len(state['documents'])}건 → 답변 생성")
     return "generate"
 
 
